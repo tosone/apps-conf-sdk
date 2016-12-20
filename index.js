@@ -12,15 +12,16 @@ var assert = require('assert');
 var debuglog = require('util').debuglog('config');
 
 bluebird.promisifyAll(redis.RedisClient.prototype);
-bluebird.promisifyAll(request, { multiArgs: true });
+bluebird.promisifyAll(request, {
+  multiArgs: true
+});
 bluebird.promisifyAll(fs);
 
 var STORE_CONFIG = 3;
-var BBCLOUD_BASEURL = process.env.bbcloudBaseUrl;
-var MAC_ADDRESS_FILE = '/sys/class/net/wlan0/address';
-var TOPIC_DOWNLOAD_START = 'download_manager/download/start';
-var TOPIC_DOWNLOAD_ERROR = 'download_manager/download/failed'
-var TOPIC_DOWNLOAD_DONE = 'download_manager/download/done';
+var BBCLOUD_BASEURL = 'http://babacloud.cn';
+var NETWORK_INTERFACE = 'wlan0';
+var TOPIC_DOWNLOAD_START = 'download_manager/start';
+var TOPIC_DOWNLOAD_DONE = 'download_manager/done';
 
 class AppsConfSDK {
 
@@ -29,7 +30,9 @@ class AppsConfSDK {
 
     this.baseUrl = opts.baseUrl || BBCLOUD_BASEURL;
 
-    this.redisClient = opts.redisClient || redis.createClient({ db });
+    this.redisClient = opts.redisClient || redis.createClient({
+      db
+    });
     this.mqttClient = opts.mqttClient || mqtt.connect();
 
     this.mqttClient.on('connect', this.onMQTTConnect.bind(this));
@@ -37,23 +40,23 @@ class AppsConfSDK {
 
   onMQTTConnect() {
     this.mqttClient.subscribe(TOPIC_DOWNLOAD_DONE);
-    this.mqttClient.subscribe(TOPIC_DOWNLOAD_ERROR);
   }
 
-  getMacAddress() {
-    if (this.macAddress) {
-      return this.macAddress;
-    }
-    this.macAddress = fs.readFileSync(MAC_ADDRESS_FILE).toString().trim()
-    return this.macAddress;
+  getMac(networkInterface) {
+    var info = os.networkInterfaces();
+    return info[Object.keys(info)[0]][0].mac;
   }
 
   ossDownload(bucket, filename) {
     var mqttClient = this.mqttClient;
     return new Promise((resolve, reject) => {
       var correlationId = uuid.v4();
-      mqttClient.on('message', this.downloadMessageHandler(correlationId, resolve, reject));
-      mqttClient.publish(TOPIC_DOWNLOAD_START, JSON.stringify({ correlationId, bucket, filename }));
+      mqttClient.on('message', this.downloadHandler(correlationId, resolve));
+      mqttClient.publish(TOPIC_DOWNLOAD_START, JSON.stringify({
+        correlationId,
+        bucket,
+        filename
+      }));
     });
   }
 
@@ -61,52 +64,41 @@ class AppsConfSDK {
     var mqttClient = this.mqttClient;
     return new Promise((resolve, reject) => {
       var correlationId = uuid.v4();
-      mqttClient.on('message', this.downloadMessageHandler(correlationId, resolve, reject));
-      mqttClient.publish(TOPIC_DOWNLOAD_START, JSON.stringify({ correlationId, url }));
+      mqttClient.on('message', this.downloadHandler(correlationId, resolve));
+      mqttClient.publish(TOPIC_DOWNLOAD_START, JSON.stringify({
+        correlationId,
+        url
+      }));
     });
   }
 
-  downloadMessageHandler(correlationId, resolve, reject) {
+  downloadHandler(correlationId, resolve) {
     var self = this;
     return function eventHandler(topic, message) {
-      // check topics matched
-      if (topic != TOPIC_DOWNLOAD_DONE && topic != TOPIC_DOWNLOAD_ERROR) return;
-
-      try {
-        var payload = JSON.parse(message.toString());
-      } catch (e) {
-        // not related with mismatched payload
-        console.warning();
-        return;
-      }
-
-      // check correlationId matched
+      if (topic !== TOPIC_DOWNLOAD_DONE) return;
+      var payload = JSON.parse(message.toString())
       if (payload.correlationId !== correlationId) return;
 
-      // remove listener
       self.mqttClient.removeListener('message', eventHandler);
-
-      if (topic == TOPIC_DOWNLOAD_ERROR) {
-        reject();
-      }
-
-      if (topic == TOPIC_DOWNLOAD_DONE) {
-        resolve(payload.file);
-      }
+      resolve(payload.file);
     };
   }
 
   getConfigFromServerAsync(items) {
     var baseUrl = this.baseUrl;
-    var macAddress = this.getMacAddress();
+    var macAddress = this.getMac();
     var requestUrl = `${baseUrl}/api/devices/${macAddress}/configuration`;
     var keys = items.map(item => item.key);
     if (keys.length > 0) {
       return request.getAsync(requestUrl, {
-        qs: { key: keys },
-        qsStringifyOptions: { arrayFormat: 'repeat' },
+        qs: {
+          key: keys
+        },
+        qsStringifyOptions: {
+          arrayFormat: 'repeat'
+        },
         json: true
-      }).then(function (results) {
+      }).then(function(results) {
         var body = results[1];
         return body;
       });
@@ -116,21 +108,21 @@ class AppsConfSDK {
 
   merge(allItems, newItems) {
     var indexedAllItems = this.indexArray(allItems);
-    newItems.forEach(function (item) {
+    newItems.forEach(function(item) {
       indexedAllItems[item.key] = item;
     });
     return this.unindexObject(indexedAllItems);
   }
 
   indexArray(arr) {
-    return arr.reduce(function (memo, current) {
+    return arr.reduce(function(memo, current) {
       memo[current.key] = current;
       return memo;
     }, {});
   }
 
   unindexObject(obj) {
-    return Object.keys(obj).map(function (key) {
+    return Object.keys(obj).map(function(key) {
       return obj[key];
     });
   }
@@ -139,13 +131,25 @@ class AppsConfSDK {
     return items.map((item) => {
       try {
         var value = JSON.parse(item.value);
-        if (value.file) return { key: item.key, value: value.file };
-        if (value.path) return { key: item.key, value: value.path };
+        if (value.file) return {
+          key: item.key,
+          value: value.file
+        };
+        if (value.path) return {
+          key: item.key,
+          value: value.path
+        };
       } catch (e) {}
-      if (item.file) return { key: item.key, value: item.file };
-      if (item.path) return { key: item.key, value: item.path };
+      if (item.file) return {
+        key: item.key,
+        value: item.file
+      };
+      if (item.path) return {
+        key: item.key,
+        value: item.path
+      };
       return item;
-    }).reduce(function (memo, current) {
+    }).reduce(function(memo, current) {
       try {
         var value = JSON.parse(current.value);
         memo[current.key] = value;
@@ -159,15 +163,15 @@ class AppsConfSDK {
   downloadAllAsync(tasks) {
     return Promise.all(tasks.map((item) => {
       if (item.url) {
-        return this.httpDownload(item.url).then(function (path) {
+        return this.httpDownload(item.url).then(function(path) {
           return fs.renameAsync(path, item.path);
         });
       } else {
-        return this.ossDownload(item.bucket, item.filename).then(function (path) {
+        return this.ossDownload(item.bucket, item.filename).then(function(path) {
           return fs.renameAsync(path, item.path);
         });;
       };
-    })).then(function (results) {
+    })).then(function(results) {
       return tasks;
     });
   }
@@ -177,7 +181,9 @@ class AppsConfSDK {
       return this.redisClient.msetAsync(tasks.reduce((memo, current) => {
         memo.push(current.key);
         if (current.path) {
-          memo.push(JSON.stringify({ file: current.path }));
+          memo.push(JSON.stringify({
+            file: current.path
+          }));
         } else {
           memo.push(JSON.stringify(current.value));
         }
@@ -216,7 +222,7 @@ class AppsConfSDK {
   }
 
   findRawValuesAsync(keys) {
-    return this.redisClient.mgetAsync(keys).map(function (item, index) {
+    return this.redisClient.mgetAsync(keys).map(function(item, index) {
       return {
         key: keys[index],
         value: item
@@ -228,7 +234,7 @@ class AppsConfSDK {
     var redisClient = this.redisClient;
     var self = this;
 
-    return bluebird.coroutine(function* () {
+    return bluebird.coroutine(function*() {
 
       // 获取配置信息
       var values = yield self.findRawValuesAsync(keys);
