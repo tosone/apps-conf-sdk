@@ -18,10 +18,11 @@ bluebird.promisifyAll(request, {
 bluebird.promisifyAll(fs);
 
 var STORE_CONFIG = 3;
-var BBCLOUD_BASEURL = 'http://babacloud.cn';
-var NETWORK_INTERFACE = 'wlan0';
-var TOPIC_DOWNLOAD_START = 'download_manager/start';
-var TOPIC_DOWNLOAD_DONE = 'download_manager/done';
+var BBCLOUD_BASEURL = process.env.bbcloudBaseUrl;
+var MAC_ADDRESS_FILE = '/sys/class/net/wlan0/address';
+var TOPIC_DOWNLOAD_START = 'download_manager/download/start';
+var TOPIC_DOWNLOAD_ERROR = 'download_manager/download/failed'
+var TOPIC_DOWNLOAD_DONE = 'download_manager/download/done';
 
 class AppsConfSDK {
 
@@ -40,18 +41,22 @@ class AppsConfSDK {
 
   onMQTTConnect() {
     this.mqttClient.subscribe(TOPIC_DOWNLOAD_DONE);
+    this.mqttClient.subscribe(TOPIC_DOWNLOAD_ERROR);
   }
 
-  getMac(networkInterface) {
-    var info = os.networkInterfaces();
-    return info[Object.keys(info)[0]][0].mac;
+  getMacAddress() {
+    if (this.macAddress) {
+      return this.macAddress;
+    }
+    this.macAddress = fs.readFileSync(MAC_ADDRESS_FILE).toString().trim()
+    return this.macAddress;
   }
 
   ossDownload(bucket, filename) {
     var mqttClient = this.mqttClient;
     return new Promise((resolve, reject) => {
       var correlationId = uuid.v4();
-      mqttClient.on('message', this.downloadHandler(correlationId, resolve));
+      mqttClient.on('message', this.downloadMessageHandler(correlationId, resolve, reject));
       mqttClient.publish(TOPIC_DOWNLOAD_START, JSON.stringify({
         correlationId,
         bucket,
@@ -64,7 +69,7 @@ class AppsConfSDK {
     var mqttClient = this.mqttClient;
     return new Promise((resolve, reject) => {
       var correlationId = uuid.v4();
-      mqttClient.on('message', this.downloadHandler(correlationId, resolve));
+      mqttClient.on('message', this.downloadMessageHandler(correlationId, resolve, reject));
       mqttClient.publish(TOPIC_DOWNLOAD_START, JSON.stringify({
         correlationId,
         url
@@ -72,21 +77,39 @@ class AppsConfSDK {
     });
   }
 
-  downloadHandler(correlationId, resolve) {
+  downloadMessageHandler(correlationId, resolve, reject) {
     var self = this;
     return function eventHandler(topic, message) {
-      if (topic !== TOPIC_DOWNLOAD_DONE) return;
-      var payload = JSON.parse(message.toString())
+      // check topics matched
+      if (topic != TOPIC_DOWNLOAD_DONE && topic != TOPIC_DOWNLOAD_ERROR) return;
+
+      try {
+        var payload = JSON.parse(message.toString());
+      } catch (e) {
+        // not related with mismatched payload
+        console.warning();
+        return;
+      }
+
+      // check correlationId matched
       if (payload.correlationId !== correlationId) return;
 
+      // remove listener
       self.mqttClient.removeListener('message', eventHandler);
-      resolve(payload.file);
+
+      if (topic == TOPIC_DOWNLOAD_ERROR) {
+        reject();
+      }
+
+      if (topic == TOPIC_DOWNLOAD_DONE) {
+        resolve(payload.file);
+      }
     };
   }
 
   getConfigFromServerAsync(items) {
     var baseUrl = this.baseUrl;
-    var macAddress = this.getMac();
+    var macAddress = this.getMacAddress();
     var requestUrl = `${baseUrl}/api/devices/${macAddress}/configuration`;
     var keys = items.map(item => item.key);
     if (keys.length > 0) {
@@ -212,10 +235,13 @@ class AppsConfSDK {
     }, []);
   }
 
-  findUnresolved(values) {
+  findUnresolved(values, force) {
     return values.reduce((memo, current, index) => {
-      if (current.value === null) {
-        memo.push(current)
+      if (force) {
+        memo.push(current);
+
+      } else if (current.value === null) {
+        memo.push(current);
       }
       return memo;
     }, []);
@@ -230,9 +256,12 @@ class AppsConfSDK {
     });
   }
 
-  retrieve(keys) {
+  retrieve(keys, opts) {
+    opts = opts || {};
     var redisClient = this.redisClient;
     var self = this;
+
+    opts.force = opts.force || false;
 
     return bluebird.coroutine(function*() {
 
@@ -242,7 +271,7 @@ class AppsConfSDK {
       debuglog('=== 获取配置信息 ===\n', values);
 
       // 收集未缓存的数据
-      var unresolved = self.findUnresolved(values);
+      var unresolved = self.findUnresolved(values, opts.force);
 
       debuglog('=== 收集未缓存的数据 ===\n', unresolved);
 
