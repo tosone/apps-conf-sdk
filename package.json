@@ -1,6 +1,6 @@
 {
   "name": "apps-conf-sdk",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -10,14 +10,14 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "bluebird": "^3.4.1",
-    "mqtt": "^1.12.0",
-    "redis": "^2.6.2",
-    "request": "^2.73.0",
+    "bluebird": "^3.4.7",
+    "mqtt": "^2.2.1",
+    "redis": "^2.6.3",
+    "request": "^2.79.0",
     "uuid": "^3.0.1"
   },
   "devDependencies": {
     "express": "^4.14.0",
-    "qs": "^6.2.0"
+    "qs": "^6.3.0"
   }
 }
