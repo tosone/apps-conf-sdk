@@ -27,9 +27,9 @@ class AppsConfSDK {
   constructor(opts) {
     opts = opts || {};
     var db = opts.db || STORE_CONFIG;
-    this.isDeserialize = opts.isDeserialize || false;
     this.baseUrl = opts.baseUrl || BBCLOUD_BASEURL;
 
+    this.macAddress = opts.macAddress || this.getMacAddress()
     this.redisClient = opts.redisClient || redis.createClient({ db });
     this.mqttClient = opts.mqttClient || mqtt.connect();
 
@@ -140,7 +140,7 @@ class AppsConfSDK {
     });
   }
 
-  flattenPath(items, isDeserialize) {
+  flattenPath(items) {
     return items.map((item) => {
       try {
         var value = JSON.parse(item.value);
@@ -151,16 +151,7 @@ class AppsConfSDK {
       if (item.path) return { key: item.key, value: item.path };
       return item;
     }).reduce(function (memo, current) {
-      if (isDeserialize) {
-        try {
-          var value = JSON.parse(current.value);
-          memo[current.key] = value;
-        } catch (e) {
-          memo[current.key] = current.value;
-        }
-      } else {
-        memo[current.key] = current.value;
-      }
+      memo[current.key] = current.value;
       return memo;
     }, {});
   }
@@ -181,18 +172,14 @@ class AppsConfSDK {
     });
   }
 
-  updateCacheAsync(tasks, isDeserialize) {
+  updateCacheAsync(tasks) {
     if (tasks.length > 0) {
       return this.redisClient.msetAsync(tasks.reduce((memo, current) => {
         memo.push(current.key);
         if (current.path) {
           memo.push(JSON.stringify({ file: current.path }));
         } else {
-          if (isDeserialize) {
-            memo.push(JSON.stringify(current.value));
-          } else {
-            memo.push(current.value);
-          }
+          memo.push(JSON.stringify(current.value));
         }
         return memo;
       }, []));
@@ -235,7 +222,7 @@ class AppsConfSDK {
     return this.redisClient.mgetAsync(keys).map(function (item, index) {
       return {
         key: keys[index],
-        value: item
+        value: JSON.parse(item)
       };
     });
   }
@@ -243,7 +230,6 @@ class AppsConfSDK {
   retrieve(keys, opts) {
     opts = opts || {};
     var redisClient = this.redisClient;
-    var isDeserialize = this.isDeserialize;
     var self = this;
 
 
@@ -279,7 +265,7 @@ class AppsConfSDK {
       debuglog('=== 针对未缓存的数据进行下载处理 ===\n', undownloaded);
 
       // 保存未缓存的 redis 信息
-      var task2 = self.updateCacheAsync(results, isDeserialize);
+      var task2 = self.updateCacheAsync(results);
 
       debuglog('=== 保存未缓存的 redis 信息 ===\n', results);
 
@@ -292,7 +278,7 @@ class AppsConfSDK {
       debuglog('=== 归并未获取的数据 ===\n', finalAnswer);
 
       // 展开文件路径
-      return self.flattenPath(finalAnswer, isDeserialize);
+      return self.flattenPath(finalAnswer);
 
     })();
   }

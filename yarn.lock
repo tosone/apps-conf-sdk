@@ -892,9 +892,9 @@ redis-parser@^2.0.0:
   version "2.3.0"
   resolved "http://registry.npm.taobao.org/redis-parser/download/redis-parser-2.3.0.tgz#313a47965e49ee35ab3a86c93388b403d76237f6"
 
-redis@^2.6.3:
-  version "2.6.3"
-  resolved "http://registry.npm.taobao.org/redis/download/redis-2.6.3.tgz#84305b92553c6a1f09c7c47c30b11ace7dbb7ad4"
+redis@^2.6.4:
+  version "2.6.4"
+  resolved "http://registry.npm.taobao.org/redis/download/redis-2.6.4.tgz#220577c2409c23a1d144a8f85304beb70104ab95"
   dependencies:
     double-ended-queue "^2.1.0-0"
     redis-commands "^1.2.0"
@@ -1103,11 +1103,7 @@ utils-merge@1.0.0:
   version "1.0.0"
   resolved "http://registry.npm.taobao.org/utils-merge/download/utils-merge-1.0.0.tgz#0294fb922bb9375153541c4f7096231f287c8af8"
 
-uuid@^3.0.0:
-  version "3.0.0"
-  resolved "http://registry.npm.taobao.org/uuid/download/uuid-3.0.0.tgz#6728fc0459c450d796a99c31837569bdf672d728"
-
-uuid@^3.0.1:
+uuid@^3.0.0, uuid@^3.0.1:
   version "3.0.1"
   resolved "http://registry.npm.taobao.org/uuid/download/uuid-3.0.1.tgz#6544bba2dfda8c1cf17e629a3a305e2bb1fee6c1"
 
